@@ -8,7 +8,7 @@ setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 
 
 #Load data
-path_to_data <- "../Data/Data Kobe 08-04-2021.xlsx"
+path_to_data <- "./Data/Data Kobe 08-04-2021.xlsx"
 Data_Kobe_08_04_2021 <- read_excel(path_to_data, sheet = "Combined")
 attach(Data_Kobe_08_04_2021)
 combined <- Data_Kobe_08_04_2021
