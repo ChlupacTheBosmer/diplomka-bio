@@ -1,0 +1,1 @@
+My data is currently stored in one excel file with several sheets. I will explain what the sheets contain and provide a description of the columns of each sheet. Additionally, I will paste several lines of the data from each sheet for illustration. This description can be always used to refresh memory.
