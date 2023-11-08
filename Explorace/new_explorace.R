@@ -28,6 +28,67 @@ dbDisconnect()
 df_summary <- summarytools::dfSummary(df)
 summarytools::view(df_summary)
 
+# Boxplots for season and elevation:
+
+# Boxplots
+
+# Define a vector of strings
+list_of_strings <- tail(names(unique_species_across_df), 8)
+
+# Store each plot in a list
+plot_list <- list()
+
+# Loop over each string in the list
+for (i in 1:length(list_of_strings)) {
+  
+  # Prepare strings
+  metric <- list_of_strings[[i]]
+  label_name <- str_to_title(gsub("_", " ", metric))
+  elev <- as.factor(unique_species_across_df$elevation)
+  
+  # Prepare plots
+  plot_list[[i]] <- ggplot(df, aes_string(x="elev", y=metric, color="season")) +
+    geom_boxplot() +
+    labs(x="Elevation", y=label_name, title = paste(label_name, "Distribution (All)")) +
+    theme_classic()
+  print(plot_list[[i]])
+  
+} 
+
+#Barplots of categorials across elevation: -----------------------------------------------------------------------
+
+# Prepare lists of colors and season labels
+color_list <- list("orange", "steelblue")
+season_list <- list("DRY", "WET")
+elevation_list_strings <- as.list(c("650", "1100", "1450", "2250"))
+
+# Define a list of strings
+list_of_traits <- names(df)[5:13]
+
+for (i in seq_along(list_of_traits)) {
+  
+  plot_list <- list()
+  
+  # Prepare strings
+  metric <- list_of_traits[[i]]
+  label_name <- str_to_title(gsub("_", " ", metric))
+  
+  #For each elevation
+  for (j in seq_along(elevation_list_strings)) {
+
+    plot_list[[j]] <- ggplot(filter(df, elevation == as.numeric(elevation_list_strings[[j]])), aes_string(x=metric, fill="season")) +
+      geom_bar(position="dodge") +
+      labs(x=paste(label_name, elevation_list_strings[[j]]), y="Count of Species") +
+      theme_minimal()
+  }
+  
+  # Arrange the plots in two rows and four columns
+  grid.arrange(grobs=rev(plot_list), nrow=4, ncol=1)
+  
+}
+--------------------------------------
+
+
 # Number of species in each network (elevation*season): -----------------------------------------------------
 
 # Species count per elevation and season
@@ -93,7 +154,7 @@ unique_species_wet <- filter(df, season == "WET") %>% distinct(sp_code, .keep_al
 # Histograms
 list_of_dataframes <- list(unique_species_dry, unique_species_wet)
 color_list <- list("orange", "steelblue")
-season_list <- list("(DRY)", "(WET)")
+season_list <- list("DRY", "WET")
 
 for (i in seq_along(list_of_dataframes)) {
   
@@ -480,4 +541,115 @@ species_cluster <- hclust(jaccard_dist)
 
 # Plot the dendrogram
 plot(species_cluster)
+
+# Specialization indices: -------------------------------------------------------------------------------------------
+
+library(bipartite)
+
+db_path <- "Data/Dataset.db"
+con <- dbConnect(RSQLite::SQLite(), dbname = db_path)
+
+# Set query
+query <- "SELECT * FROM combined"  # Adjust your SELECT query as needed
+visits <- dbGetQuery(con, query)
+dbDisconnect()
+
+# FIlter visists
+visits <- visits[,4:46]
+visits <- filter(visits, include_in_network == 1)
+
+# Prepare data frames for each season
+visits_dry <- filter(visits, season == "DRY")
+visits_wet <- filter(visits, season == "WET")
+
+# Lists fro itterations
+list_of_dataframes <- list(visits_dry, visits_wet)
+color_list <- list("orange", "steelblue")
+season_list <- list("DRY", "WET")
+elevation_list_strings <- as.list(as.character(unique(visits$elevation)))
+
+# Lists of webs
+webs_order <- list()
+webs_group <- list()
+
+#For every season
+for (i in seq_along(list_of_dataframes)) {
+  
+  # Current dataframe
+  current_df <- list_of_dataframes[[i]]
+  
+  webs_order[[i]]<-frame2webs(current_df, varnames = c("sp_code", "insect_order", "elevation", "freq_fm_spp"), type.out = "list", emptylist = TRUE)
+  webs_group[[i]]<-frame2webs(current_df, varnames = c("sp_code", "functional_group", "elevation", "freq_fm_spp"), type.out = "list", emptylist = TRUE)
+  
+}
+
+#Visualize web
+for (i in 1:2) {
+  for(j in 1:4) {
+    
+    web <- webs_order[[i]][[j]]
+    
+    plotweb(web, method = "cca", empty = TRUE, labsize = 1, ybig = 1, y.width.low = 0.1, 
+            y.width.high = 0.1, low.spacing = NULL, high.spacing = NULL, arrow="no", 
+            col.interaction=color_list[[i]], col.high = "gray0", col.low="forestgreen", bor.col.interaction ="black", 
+            bor.col.high="white", bor.col.low="forestgreen", high.lablength = NULL, low.lablength = NULL, sequence=NULL, 
+            low.abun=NULL, low.abun.col="green", bor.low.abun.col ="black", high.abun=NULL, high.abun.col="red", 
+            bor.high.abun.col="black", text.rot=90, text.high.col="black", text.low.col="black", adj.high=NULL, 
+            adj.low=NULL, plot.axes = FALSE, low.y=0.5, high.y=1.5, add=FALSE, y.lim=NULL, x.lim=NULL, low.plot=TRUE, 
+            high.plot=TRUE, high.xoff = 0, low.xoff = 0, high.lab.dis = NULL, low.lab.dis = NULL, abuns.type="additional")
+  
+  }
+}
+
+joined_dfs_list <- list()
+
+# Each season
+for (i in 1:2) {
+  
+  # Current dataframe
+  current_df <- list_of_dataframes[[i]]
+    
+  # Each elevation
+  for(j in 1:4) {
+    
+    filtered_df <- filter(current_df, elevation == as.numeric(rev(elevation_list_strings)[[j]]))
+    
+    web <- webs_group[[i]][[j]]
+    
+    plotweb(web, method = "cca", empty = TRUE, labsize = 1, ybig = 1, y.width.low = 0.1, 
+            y.width.high = 0.1, low.spacing = NULL, high.spacing = NULL, arrow="no", 
+            col.interaction=color_list[[i]], col.high = "gray0", col.low="forestgreen", bor.col.interaction ="black", 
+            bor.col.high="white", bor.col.low="forestgreen", high.lablength = NULL, low.lablength = NULL, sequence=NULL, 
+            low.abun=NULL, low.abun.col="green", bor.low.abun.col ="black", high.abun=NULL, high.abun.col="red", 
+            bor.high.abun.col="black", text.rot=90, text.high.col="black", text.low.col="black", adj.high=NULL, 
+            adj.low=NULL, plot.axes = FALSE, low.y=0.5, high.y=1.5, add=FALSE, y.lim=NULL, x.lim=NULL, low.plot=TRUE, 
+            high.plot=TRUE, high.xoff = 0, low.xoff = 0, high.lab.dis = NULL, low.lab.dis = NULL, abuns.type="additional")
+    
+    # Add a title after creating the plot
+    title(main = elevation_list_strings[[j]], col.main = "black", font.main = 2)
+    
+    indices <- specieslevel(web, index="ALLBUTD", level="lower", logbase=exp(1), low.abun=NULL, high.abun=NULL, PDI.normalise=TRUE, 
+                             PSI.beta=c(1,0), nested.method="NODF", nested.normalised=TRUE, nested.weighted=TRUE, empty.web=TRUE)
+    # Convert row names of df2 to a column
+    indices$sp_code <- rownames(indices)
+    joined_dfs_list[[j]] <- merge(filtered_df %>% distinct(sp_code, .keep_all = TRUE), select(indices, sp_code, d), by = "sp_code")
+    
+    
+  }
+  
+  list_of_dataframes[[i]] <- do.call(rbind, joined_dfs_list)
+  
+}
+
+plants_with_indices <- do.call(rbind, list_of_dataframes)[,-c(5:42)]
+
+for (i in 1:2) {
+  for(j in 1:4) {
+    p <- ggplot(filter(plants_with_indices, season == season_list[[i]], elevation == elevation_list_strings[[j]]), aes(x=d)) +
+      geom_histogram(bins=10, fill="blue", color="black") +
+      labs(x="Specialization", y="Frequency", title = paste(season_list[[i]], " ", elevation_list_strings[[j]])) +
+      theme_minimal()
+    print(p)
+  }
+}
 
