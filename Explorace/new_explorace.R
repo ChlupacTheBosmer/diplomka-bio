@@ -16,13 +16,14 @@ install.packages(readr)
 
 # Establish connection
 setwd("D:/Dílna/Studium/DP - Bio/Diplomka - Analyses")
+setwd("~/Rko/diplomka/diplomka-bio")
 db_path <- "Data/Dataset.db"
 con <- dbConnect(RSQLite::SQLite(), dbname = db_path)
 
 # Set query
 query <- "SELECT * FROM traits_unique_per_network WHERE species IS NOT NULL"  # Adjust your SELECT query as needed
 df <- dbGetQuery(con, query)
-dbDisconnect()
+dbDisconnect(con)
 
 # Preliminary summary
 df_summary <- summarytools::dfSummary(df)
@@ -33,7 +34,7 @@ summarytools::view(df_summary)
 # Boxplots
 
 # Define a vector of strings
-list_of_strings <- tail(names(unique_species_across_df), 8)
+list_of_strings <- tail(names(df), 8)
 
 # Store each plot in a list
 plot_list <- list()
@@ -44,7 +45,7 @@ for (i in 1:length(list_of_strings)) {
   # Prepare strings
   metric <- list_of_strings[[i]]
   label_name <- str_to_title(gsub("_", " ", metric))
-  elev <- as.factor(unique_species_across_df$elevation)
+  elev <- as.factor(df$elevation)
   
   # Prepare plots
   plot_list[[i]] <- ggplot(df, aes_string(x="elev", y=metric, color="season")) +
@@ -265,7 +266,7 @@ unique_species_wet <- filter(unique_species_across_df, season == "WET")
 
 
 # Assuming you have a PNG image named "background.png" in your working directory
-background <- readPNG("D:/Dílna/Studium/DP - Bio/Diplomka - Analyses/img/tube_bg.png")
+background <- readPNG("./img/tube_bg.png")
 g_background <- rasterGrob(background, interpolate=TRUE)
 
 # Create two histograms
@@ -550,19 +551,19 @@ db_path <- "Data/Dataset.db"
 con <- dbConnect(RSQLite::SQLite(), dbname = db_path)
 
 # Set query
-query <- "SELECT * FROM combined"  # Adjust your SELECT query as needed
+query <- "SELECT * FROM combined WHERE species IS NOT NULL"  # Adjust your SELECT query as needed
 visits <- dbGetQuery(con, query)
-dbDisconnect()
+dbDisconnect(con)
 
 # FIlter visists
-visits <- visits[,4:46]
+visits <- visits[,4:62]
 visits <- filter(visits, include_in_network == 1)
 
 # Prepare data frames for each season
 visits_dry <- filter(visits, season == "DRY")
 visits_wet <- filter(visits, season == "WET")
 
-# Lists fro itterations
+# Lists fro iterations
 list_of_dataframes <- list(visits_dry, visits_wet)
 color_list <- list("orange", "steelblue")
 season_list <- list("DRY", "WET")
@@ -578,8 +579,8 @@ for (i in seq_along(list_of_dataframes)) {
   # Current dataframe
   current_df <- list_of_dataframes[[i]]
   
-  webs_order[[i]]<-frame2webs(current_df, varnames = c("sp_code", "insect_order", "elevation", "freq_fm_spp"), type.out = "list", emptylist = TRUE)
-  webs_group[[i]]<-frame2webs(current_df, varnames = c("sp_code", "functional_group", "elevation", "freq_fm_spp"), type.out = "list", emptylist = TRUE)
+  webs_order[[i]]<-frame2webs(current_df, varnames = c("sp_code", "insect_order", "elevation"), type.out = "list", emptylist = TRUE)
+  webs_group[[i]]<-frame2webs(current_df, varnames = c("sp_code", "functional_group", "elevation"), type.out = "list", emptylist = TRUE)
   
 }
 
@@ -643,13 +644,29 @@ for (i in 1:2) {
 
 plants_with_indices <- do.call(rbind, list_of_dataframes)[,-c(5:42)]
 
+
 for (i in 1:2) {
+  plot_list <- list()
   for(j in 1:4) {
-    p <- ggplot(filter(plants_with_indices, season == season_list[[i]], elevation == elevation_list_strings[[j]]), aes(x=d)) +
-      geom_histogram(bins=10, fill="blue", color="black") +
+    plot_list[[j]] <- ggplot(filter(plants_with_indices, season == season_list[[i]], elevation == elevation_list_strings[[j]]), aes(x=d)) +
+      geom_histogram(bins=20, fill="blue", color="black") +
       labs(x="Specialization", y="Frequency", title = paste(season_list[[i]], " ", elevation_list_strings[[j]])) +
       theme_minimal()
-    print(p)
   }
+  grid.arrange(grobs=plot_list, nrow=2, ncol=2)
 }
 
+webs_order
+webs_group
+web <- webs_order[[1]][[1]]
+
+plants_with_indices_dry <- filter(plants_with_indices, season == "DRY")
+
+ggplot(plants_with_indices, aes(x=size, y=d, color=factor(elevation), shape=factor(season))) +
+  geom_point(alpha=0.7) +
+  labs(x="Size", y="Specialization") +
+  theme_minimal()
+
+attach(plants_with_indices)
+boxplot(d~colour, col=c(sort(unique(colour))))
+boxplot(d~brightness)
