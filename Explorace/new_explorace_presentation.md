@@ -11,8 +11,6 @@ library(bipartite)
 library(tidyr)
 library(reshape2)
 library(vegan)
-library(naniar)
-library(mgcv)
 
 # Define functions: ------------------------------------------------------------
 
@@ -44,7 +42,6 @@ clean_dataframe <- function(df, column_names) {
 # Export modified datasets: ----------------------------------------------------
   ## To csv: ----------
 write.csv(plants_with_indices, "species_traits_d.csv")
-write.csv(df, "main_df.csv")
 
 # Get Data from database: ------------------------------------------------------
   ## Get data from Combined table in the SQLite db: ----------------------------
@@ -62,12 +59,6 @@ dbDisconnect(con)
 df_summary <- summarytools::dfSummary(df)
 summarytools::view(df_summary)
 
-vis_miss(df)
-
-# Correlation heatmap
-corr_matrix <- cor(df_numeric, use = "complete.obs")
-corrplot(corr_matrix, method = "color")
-
 # Continuous variables: --------------------------------------------------------
   ## Boxplots for season and elevation: ----------------------------------------------------------
   
@@ -75,7 +66,7 @@ corrplot(corr_matrix, method = "color")
   unique_species_across_df <- df %>% distinct(sp_code, .keep_all = TRUE)
   
   # Define a vector of strings
-  list_of_strings <- tail(names(df), 8)
+  list_of_strings <- tail(names(unique_species_across_df), 8)
   
   # Store each plot in a list
   plot_list <- list()
@@ -84,7 +75,7 @@ corrplot(corr_matrix, method = "color")
   for (i in 1:length(list_of_strings)) {
     
     # Clean dataset
-    cleaned_df <- clean_dataframe(df, list_of_strings[[i]])
+    cleaned_df <- clean_dataframe(unique_species_across_df, list_of_strings[[i]])
     print(nrow(cleaned_df))
     
     # Prepare strings
@@ -100,8 +91,6 @@ corrplot(corr_matrix, method = "color")
     print(plot_list[[i]])
     
   } 
-  
-  #grid.arrange(grobs=plot_list, nrow=2, ncol=4)
   
   ## Basic histograms for continuous traits across entire data sets: ---------------------------------------------
   
@@ -607,7 +596,7 @@ for (i in seq_along(list_of_traits)) {
   list_of_dataframes <- list(visits_dry, visits_wet)
   color_list <- list("orange", "steelblue")
   season_list <- list("DRY", "WET")
-  elevation_list_strings <- as.list(rev(as.character(unique(visits$elevation))))
+  elevation_list_strings <- as.list(as.character(unique(visits$elevation)))
   
   # Lists of webs
   webs_order <- list()
@@ -615,8 +604,6 @@ for (i in seq_along(list_of_traits)) {
   
   #For every season
   for (i in seq_along(list_of_dataframes)) {
-    # check
-    print(i)
     
     # Current dataframe
     current_df <- list_of_dataframes[[i]]
@@ -630,7 +617,6 @@ for (i in seq_along(list_of_traits)) {
   for (i in 1:2) {
     for(j in 1:4) {
       
-      # !!!! SELECT MANUALLY
       web <- webs_order[[i]][[j]]
       
       plotweb(web, method = "cca", empty = TRUE, labsize = 1, ybig = 1, y.width.low = 0.1, 
@@ -642,20 +628,11 @@ for (i in seq_along(list_of_traits)) {
               adj.low=NULL, plot.axes = FALSE, low.y=0.5, high.y=1.5, add=FALSE, y.lim=NULL, x.lim=NULL, low.plot=TRUE, 
               high.plot=TRUE, high.xoff = 0, low.xoff = 0, high.lab.dis = NULL, low.lab.dis = NULL, abuns.type="additional")
       
-      # Calculate H2' index of specialization for the network
-      h2_index <- H2fun(web, H2_integer=TRUE)[1]
-      
-      # Add a title after creating the plot
-      title(main = paste(elevation_list_strings[[j]], " - H2' index =", h2_index), col.main = "black", font.main = 2)
-    
-      # Print the H2' index
-      #cat("H2' index for network", i, "-", j, ":", h2_index, "\n")
     }
   }
   
   
   # Visualize web, calculate indices and bind them to the filtered dataframe for each web
-  list_of_dataframes <- list(visits_dry, visits_wet)
   joined_dfs_list <- list()
   
   # Each season
@@ -667,10 +644,9 @@ for (i in seq_along(list_of_traits)) {
     # Each elevation
     for(j in 1:4) {
       
-      filtered_df <- filter(current_df, elevation == as.numeric(elevation_list_strings[[j]]))
+      filtered_df <- filter(current_df, elevation == as.numeric(rev(elevation_list_strings)[[j]]))
       
-      #!!!!! SELECT manually
-      web <- webs_order[[i]][[j]]
+      web <- webs_group[[i]][[j]]
       
       plotweb(web, method = "cca", empty = TRUE, labsize = 1, ybig = 1, y.width.low = 0.1, 
               y.width.high = 0.1, low.spacing = NULL, high.spacing = NULL, arrow="no", 
@@ -690,13 +666,6 @@ for (i in seq_along(list_of_traits)) {
       indices$sp_code <- rownames(indices)
       joined_dfs_list[[j]] <- merge(filtered_df %>% distinct(sp_code, .keep_all = TRUE), select(indices, sp_code, d), by = "sp_code")
       
-      
-      # Code to plot a histogram of d' values
-      # Assuming 'joined_dfs_list[[j]]' now contains a column 'd' for d' values
-      d_values <- joined_dfs_list[[j]]$d # Extract d' values for the current network
-      
-      # Plot histogram using base R
-      hist(d_values, breaks = 10, main = paste("Histogram of d' values for", elevation_list_strings[[j]]), xlab = "d' index", ylab = "Frequency")
       
     }
     
@@ -720,88 +689,14 @@ for (i in seq_along(list_of_traits)) {
   
   # Visualize distribution of specialization
   plants_with_indices_dry <- filter(plants_with_indices, season == "DRY")
-  plants_with_indices_wet <- filter(plants_with_indices, season == "WET")
   
-  # GAMS and visulaization in scatterplots ---------------------------
-  
-  # Full model
-  gam_model <- gam(d ~ s(tube_length) + s(size) + factor(season) + factor(elevation) +
-                     s(tube_length, by=factor(season)) + s(size, by=factor(season)), 
-                   data = plants_with_indices)
-  
-  
-  #SIZE
-  # Prepare the plot with base layers
   p <- ggplot(plants_with_indices, aes(x=size, y=d, color=factor(elevation), shape=factor(season))) +
     geom_point(alpha=0.7) +
-    labs(x="Size", y="Specialization", color="Elevation", shape="Season") +
+    labs(x="Size", y="Specialization") +
     theme_minimal()
-  
-  #fit  gam separately
-  gam_model <- gam(d ~ s(size, k = 4), data = plants_with_indices)
-  summary(gam_model)
-  plot(gam_model, page = 1)
-  plot(gam_model, residuals = TRUE)
-  
-  # Create a new data frame for predictions
-  size_range <- seq(min(plants_with_indices$size, na.rm = TRUE), max(plants_with_indices$size, na.rm = TRUE), length.out = 100)
-  pred_data <- data.frame(size = size_range)
-  
-  # Predict d values using the model
-  pred_data$d_pred <- predict(gam_model, newdata = pred_data)
-  
-  # Add the GAM predictions
-  p <- p + geom_line(data = pred_data, aes(x = size, y = d_pred), color = "black", inherit.aes = FALSE)
-  
-  # Now print the modified plot
   print(p)
   
-  #TUBE LENGTH
-  # Prepare the plot with base layers
-  p <- ggplot(plants_with_indices, aes(x=tube_length, y=d, color=factor(elevation), shape=factor(season))) +
-    geom_point(alpha=0.7) +
-    labs(x="Tube Length", y="Specialization", color="Elevation", shape="Season") +
-    theme_minimal()
-  
-  #fit  gam separately
-  gam_model <- gam(d ~ s(tube_length, k = 4), data = plants_with_indices)
-  summary(gam_model)
-  plot(gam_model, page = 1)
-  plot(gam_model, residuals = TRUE)
-  
-  # Create a new data frame for predictions
-  tube_length_range <- seq(min(plants_with_indices$tube_length, na.rm = TRUE), max(plants_with_indices$tube_length, na.rm = TRUE), length.out = 100)
-  pred_data <- data.frame(tube_length = tube_length_range)
-  
-  # Predict d values using the model
-  pred_data$d_pred <- predict(gam_model, newdata = pred_data)
-  
-  # Add the GAM predictions
-  p <- p + geom_line(data = pred_data, aes(x = tube_length, y = d_pred), color = "black", inherit.aes = FALSE)
-  
-  # Now print the modified plot
-  print(p)
-  
-  # liinar reg diag
-  # Scatter plot for a single predictor
-  plot(plants_with_indices$tube_length, plants_with_indices$d, xlab = "Tube Length", ylab = "Specialization (d)")
-  
-  # Assuming model is your linear regression model
-  model <- lm(d ~ tube_length, data = plants_with_indices)
-  plot(model$fitted.values, resid(model), xlab = "Fitted Values", ylab = "Residuals")
-  
-  # Q-Q plot
-  qqnorm(resid(model))
-  qqline(resid(model))
-  
-  # Shapiro-Wilk test
-  shapiro.test(resid(model))
-  
-  
-  
-  
-  
-  # Visualize traits with specialization -----------------------------
+  # Visualize traits with specialization
   filtered_df <- filter(plants_with_indices, season == "DRY", elevation == 650)
   attach(filtered_df)
   boxplot(d~colour, col=c(sort(unique(colour))))
@@ -848,52 +743,9 @@ for (i in seq_along(list_of_traits)) {
       plot(d~concentration)
     }
     rm(season_df)
-    par(mfrow = c(1, 1))
   }
   
-# Regression of specialization and size for each unique combination of season * elevation --------
-  library(ggplot2)
-  library(dplyr)
-  
-  # Assuming your data frame is named plants_with_indices
-  # and it has the following columns: size, d (specialization index), elevation, and season
-  
-  # Unique combinations of season and elevation
-  unique_combinations <- unique(plants_with_indices[c("season", "elevation")])
-  
-  # Function to perform linear regression and plot
-  analyze_and_plot <- function(data, season, elevation) {
-    # Subset data
-    subset_data <- data %>% 
-      filter(season == !!season & elevation == !!elevation)
-    
-    # Linear model
-    model <- lm(d ~ size, data = subset_data)
-    
-    # Summary of the model
-    print(summary(model))
-    
-    # Plot
-    p <- ggplot(subset_data, aes(x = size, y = d)) +
-      geom_point(aes(color = factor(elevation), shape = factor(season)), alpha = 0.7) +
-      geom_smooth(method = "lm", se = TRUE, color = "black") +
-      labs(x = "Size", y = "Specialization", title = paste("Season:", season, "- Elevation:", elevation)) +
-      theme_minimal()
-    
-    print(p)
-  }
-  
-  # Apply the function to each combination
-  for(i in 1:nrow(unique_combinations)) {
-    analyze_and_plot(plants_with_indices, unique_combinations$season[i], unique_combinations$elevation[i])
-  }
-  
-  # Additionally, to analyze by season and elevation separately, you can loop through unique seasons and elevations
-  # similar to the approach above but filtering only by one factor at a time.
-  
-  
-  
-  
+
 # Multivariate analysis on trait data: -----------------------------------------
   ## Data preprocessing: -------------------------------------------------------------
   
@@ -1014,28 +866,26 @@ for (i in seq_along(list_of_traits)) {
   selected_rows <- traits_numeric_stand[!duplicated(species_codes), ]
   
   # Exclude some columns
-  selected_rows_unfil <- selected_rows
   color_rgb <- c("R","G","B")
   color_columns <- c("brown", "green", "orange", "pink", "purple", "red", "white", "yellow")
   selected_rows <- selected_rows[,!colnames(selected_rows) %in% color_columns]
-  selected_rows <- selected_rows[,!colnames(selected_rows) %in% color_rgb]
   colnames(selected_rows)
   
   # Plot the results
   attach(selected_rows)
   par(mfrow=c(1,1))
   rdout=rda(selected_rows)
-  plot(rdout, choices = c(1, 2), type="n")
+  plot(rdout, choices = c(1, 3), type="n")
   text(rdout, disp="species", cex=0.7)
   points(rdout, disp="sites",pch=symmetry_num+16,cex=1.3, col = "black")
-  points(rdout, disp="sites",pch=symmetry_num+16,cex=1.0, col = rgb(plants_with_indices$R/255,plants_with_indices$G/255,plants_with_indices$B/255))
+  points(rdout, disp="sites",pch=symmetry_num+16,cex=1.0, col = rgb(plants_with_indices$R/255, plants_with_indices$G/255,plants_with_indices$B/255))
   arrows(0,0,scores(rdout)$species["tube_length",1],scores(rdout)$species["tube_length",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["anther_pos_num",1],scores(rdout)$species["anther_pos_num",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["R",1],scores(rdout)$species["R",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["G",1],scores(rdout)$species["G",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["B",1],scores(rdout)$species["B",2],lwd=1,length=0.15)
   #arrows(0,0,scores(rdout)$species["hue",1],scores(rdout)$species["hue",2],lwd=1,length=0.15)
-  arrows(0,0,scores(rdout)$species["flower_pos_num",1],scores(rdout)$species["flower_pos_num",2],lwd=1,length=0.15)
+  arrows(0,0,scores(rdout)$species["position_num",1],scores(rdout)$species["position_num",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["odour_num",1],scores(rdout)$species["odour_num",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["symmetry_num",1],scores(rdout)$species["symmetry_num",2],lwd=1,length=0.15)
   arrows(0,0,scores(rdout)$species["size",1],scores(rdout)$species["size",2],lwd=1,length=0.15)
@@ -1044,173 +894,5 @@ for (i in seq_along(list_of_traits)) {
   
   barplot(as.numeric(eigenvals(rdout) / sum(eigenvals(rdout))))
   
-# Fit a model on spec and traits: -----------------------------------------------  
   
-  library(lme4)
-  library(lmerTest)
- 
-  attach(plants_with_indices)
-  
-  # Fitting the GLMM
-  glmm_model <- lmer(d ~ (size + tube_length) * factor(elevation) + factor(season) + (1 | species), data = plants_with_indices)
-  glmm_model <- glmer(d ~ (size + tube_length) * factor(elevation) + factor(season) + (1 | sp_code), family = "quasipoisson", data = plants_with_indices)
-  
-  
-  
-  # Model selection and diagnostics
-  step_glmm_model <- step(glmm_model)
-  
-  # Summary of the selected model
-  summary(glmm_model)
-  
-  # Plotting significant relationships
-  # Replace 'trait1' with the significant trait
-  ggplot(plants_with_indices, aes(x = size, y = d)) + 
-    geom_point() + 
-    geom_smooth(method = "lm") + 
-    theme_minimal()
-  
-# GLMM -------------------------------------------------------------------------
-  # Diag of distributon
-  # Histogram
-  hist(plants_with_indices$d, breaks = 30, main = "Histogram of Specialization Index", xlab = "Specialization Index")
-  
-  # Density Plot
-  plot(density(plants_with_indices$d, na.rm = TRUE), main = "Density Plot of Specialization Index")
-  
-  # QQ PLots
-  qqnorm(plants_with_indices$d)
-  qqline(plants_with_indices$d, col = "red")
-  
-  # Normality test
-  shapiro.test(plants_with_indices$d)
-  
-  library(e1071)
-  
-  # Skewness
-  skewness(plants_with_indices$d, na.rm = TRUE)
-  
-  # Kurtosis
-  kurtosis(plants_with_indices$d, na.rm = TRUE)
-  
-  #Fitting beta distribution model
-  
-  install.packages("gamlss")
-  library(gamlss)
-  
-  # Assuming plants_with_indices$d values are strictly between 0 and 1
-  # If there are 0s or 1s, they should be adjusted before fitting a beta model
-  # Assuming your data frame is plants_with_indices and the specialization index is d
-  plants_with_indices_trans <- plants_with_indices
-  n <- nrow(plants_with_indices_trans)
-  
-  # Transform 0 and 1 values
-  plants_with_indices_trans$d_transformed <- (plants_with_indices_trans$d * (n - 1) + 0.5) / n
-  
-  #Ommit columns with NAs
-  # Assuming your data frame is called 'plants_with_indices'
-  plants_with_indices_trans <- plants_with_indices_trans[, !apply(is.na(plants_with_indices_trans), 2, any)]
-  
-  attach(plants_with_indices_trans)
-  
-  # Fitting the model with beta distribution
-  
-  # POLYNOMS
-  # Including interactions between tube length and size with season and elevation
-  gam_model_beta <- gamlss(d_transformed ~ pb(tube_length) + pb(size) + 
-                             factor(season) * pb(tube_length) + 
-                             factor(season) * pb(size) + 
-                             factor(elevation) * pb(tube_length) + 
-                             factor(elevation) * pb(size), 
-                           family = BE, 
-                           data = plants_with_indices_trans)
-  
-  # Checking the summary of the model
-  summary(gam_model_beta)
-  
-  # Plotting the results
-  # We can plot the main effects and interactions by using the plot() function
-  # Due to the complexity of the interactions, we'll create separate plots for each interaction
-  plot(gam_model_beta, xlab = "Tube Length", ylab = "Specialization Index", main = "Effect of Tube Length")
-  plot(gam_model_beta, xlab = "Size", ylab = "Specialization Index", main = "Effect of Size")
-  
-  # For the interaction effects, we might need to create custom plots
-  # Here's an example for tube length and season interaction
-  # We would need to create similar plots for each interaction of interest
-  
-  # LINEAR
-  # Openness
-  plants_with_indices_trans$openness <- ifelse(plants_with_indices_trans[[shape_col]] %in% c("Dish", "Open", "Bowl", "Stellate"), "open", "closed")
-  
-  # Fit a model with a beta distribution, focusing on linear relationships
-  gam_model_beta_linear <- gamlss(d_transformed ~ tube_length + size +
-                                    factor(season) + factor(elevation) + 
-                                    factor(season):tube_length + 
-                                    factor(season):size + 
-                                    factor(elevation):tube_length + 
-                                    factor(elevation):size, 
-                                  family = BE(),
-                                  data = plants_with_indices_trans)
-  
-  # Check the summary of the model
-  summary(gam_model_beta_linear)
-  
-  plot(gam_model_beta_linear, xlab = "Tube Length", ylab = "Specialization Index", main = "Effect of Tube Length")
-  plot(gam_model_beta_linear, xlab = "Size", ylab = "Specialization Index", main = "Effect of Size")
-  
-  # Assuming 'plants_with_indices_trans' is your dataset and 'gam_model_beta_linear' is your fitted model
-  # Generate a sequence of tube lengths and sizes
-  tube_length_seq <- seq(from = min(plants_with_indices_trans$tube_length, na.rm = TRUE), 
-                         to = max(plants_with_indices_trans$tube_length, na.rm = TRUE), length.out = 100)
-  size_seq <- seq(from = min(plants_with_indices_trans$size, na.rm = TRUE), 
-                  to = max(plants_with_indices_trans$size, na.rm = TRUE), length.out = 100)
-  
-  # Create a data frame for predictions
-  pred_data <- expand.grid(tube_length = tube_length_seq, 
-                           size = size_seq, # Using mean size for simplification
-                           season = unique(plants_with_indices_trans$season),
-                           elevation = unique(plants_with_indices_trans$elevation)) # Add more factors if needed
-  
-  # Generate predictions
-  # Note: This assumes the model can handle new data without factors not seen in training.
-  # You may need to adjust based on your actual factor levels and model capabilities.
-  pred_data$predicted_d <- predict(gam_model_beta_linear, newdata = pred_data, type = "response")
-  
-  # Ensure the prediction data is sorted
-  pred_data <- pred_data[order(pred_data$predicted_d), ]
-  
-  # Plot for Tube Length and Season
-  ggplot(pred_data, aes(x = tube_length, y = predicted_d, color = season)) +
-    #geom_line() +
-    geom_point(data = plants_with_indices_trans, aes(x = tube_length, y = d_transformed, color = season), alpha = 0.4) +
-    geom_smooth(method = "loess", se = FALSE) +
-    facet_wrap(~season) + # Separate plots for each season
-    labs(title = "Effect of Tube Length on Specialization Index by Season",
-         x = "Tube Length", y = "Predicted Specialization Index") +
-    theme_minimal() +
-    scale_color_brewer(palette = "Set1") # Adjust color palette as needed
-  
-  # Plot for Size and Season
-  ggplot(pred_data, aes(x = size, y = predicted_d, color = season)) +
-    #geom_line() +
-    geom_point(data = plants_with_indices_trans, aes(x = size, y = d_transformed, color = season), alpha = 0.4) +
-    geom_smooth(method = "loess", se = FALSE) +
-    facet_wrap(~season) + # Separate plots for each season
-    labs(title = "Effect of Size on Specialization Index by Season",
-         x = "Size", y = "Predicted Specialization Index") +
-    theme_minimal() +
-    scale_color_brewer(palette = "Set1") # Adjust color palette as needed
-  
-
-  
-  
-  
-  
-# Export plots: ----------------------------------------------------------------
-  
-  pdf("eda_plots.pdf")
-  lapply(hist_plots, print)
-  lapply(box_plots, print)
-  lapply(bar_plots, print)
-  dev.off()
   
